@@ -1205,7 +1205,7 @@
       setupQuickTapButtons();
 
       // Default date picker to today
-      document.getElementById('logFilterDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('logFilterDate').value = getLocalDateString();
 
       // Ambil data peserta terbaru dari Google Sheet jika URL GAS sudah diatur.
       loadStudentsFromGoogleSheets();
@@ -1397,11 +1397,24 @@
       }
     }
 
+    function getLocalDateString(date = new Date()) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
     function processScannedCode(scannedValue, modeText, statusOverride = 'AUTO') {
-      const value = scannedValue.trim();
-      
-      // Find matching student by RFID, NISN, or Name
-      const student = studentData.find(s => s.rfid === value || s.nis === value || s.id === value || s.name.toLowerCase() === value.toLowerCase());
+      const value = String(scannedValue || '').trim();
+      if (!value) return;
+
+      // Selalu cari peserta dari data server terbaru yang sudah dimuat.
+      const student = studentData.find(s =>
+        s.rfid === value ||
+        s.nis === value ||
+        s.id === value ||
+        String(s.name || '').toLowerCase() === value.toLowerCase()
+      );
 
       if (!student) {
         playAudioBeep('error');
@@ -1410,63 +1423,78 @@
         return;
       }
 
-      const now = new Date();
-      const todayStr = now.toISOString().slice(0, 10);
-      const timeStr = now.toLocaleTimeString('id-ID', { hour12: false });
+      // Sebelum menentukan MASUK/PULANG, tarik kondisi absensi terbaru dari server.
+      // Ini penting agar dua komputer tidak mengambil keputusan berdasarkan localStorage masing-masing.
+      loadAttendanceFromGoogleSheets(true, function(serverLoaded) {
+        const now = new Date();
+        const todayStr = getLocalDateString(now);
+        const timeStr = now.toLocaleTimeString('id-ID', { hour12: false });
 
-      // Check if already scanned today
-      let logIndex = attendanceLogs.findIndex(l => l.studentId === student.id && l.date === todayStr);
-      let status = 'Hadir';
-      let lateMinutes = 0;
-      let isCheckOut = false;
+        // Setelah server dimuat, cari data berdasarkan studentId maupun NIS.
+        let logIndex = attendanceLogs.findIndex(l =>
+          (String(l.studentId) === String(student.id) || String(l.studentId) === String(student.nis)) &&
+          l.date === todayStr
+        );
 
-      // Determine Check-in vs Check-out
-      if (logIndex >= 0) {
-        // Record Check-out
-        attendanceLogs[logIndex].timeOut = timeStr;
-        isCheckOut = true;
-        status = attendanceLogs[logIndex].status;
-      } else {
-        // Record Check-in
-        if (statusOverride !== 'AUTO') {
-          status = statusOverride;
-        } else {
-          // Compare with school time settings
-          const [hT, mT] = timeSettings.jamToleransi.split(':').map(Number);
-          const currentMinutes = now.getHours() * 60 + now.getMinutes();
-          const toleransiMinutes = hT * 60 + mT;
+        let status = 'Hadir';
+        let lateMinutes = 0;
+        let isCheckOut = false;
 
-          if (currentMinutes > toleransiMinutes) {
-            status = 'Terlambat';
-            lateMinutes = currentMinutes - toleransiMinutes;
+        // Jika sudah ada jam masuk, scan berikutnya menjadi PULANG.
+        if (logIndex >= 0 && attendanceLogs[logIndex].timeIn && attendanceLogs[logIndex].timeIn !== '-') {
+          if (!attendanceLogs[logIndex].timeOut || attendanceLogs[logIndex].timeOut === '-') {
+            attendanceLogs[logIndex].timeOut = timeStr;
+            isCheckOut = true;
+            status = attendanceLogs[logIndex].status || 'Hadir';
+          } else {
+            playAudioBeep('error');
+            showScanResult(student, false, 'Presensi hari ini sudah memiliki Jam Masuk dan Jam Pulang.', modeText, status, true);
+            showToast('Presensi hari ini sudah lengkap.', 'info');
+            return;
           }
+        } else {
+          // Record Check-in
+          if (statusOverride !== 'AUTO') {
+            status = statusOverride;
+          } else {
+            const [hT, mT] = String(timeSettings.jamToleransi || '07:15').split(':').map(Number);
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            const toleransiMinutes = hT * 60 + mT;
+
+            if (currentMinutes > toleransiMinutes) {
+              status = 'Terlambat';
+              lateMinutes = currentMinutes - toleransiMinutes;
+            }
+          }
+
+          attendanceLogs.unshift({
+            id: 'l_' + Date.now(),
+            studentId: student.id,
+            date: todayStr,
+            timeIn: timeStr,
+            timeOut: '-',
+            status: status,
+            lateMinutes: lateMinutes,
+            mode: modeText
+          });
         }
 
-        attendanceLogs.unshift({
-          id: 'l_' + Date.now(),
-          studentId: student.id,
-          date: todayStr,
-          timeIn: timeStr,
-          timeOut: '-',
-          status: status,
-          lateMinutes: lateMinutes,
-          mode: modeText
-        });
-      }
+        if (status === 'Terlambat') playAudioBeep('late');
+        else playAudioBeep('success');
 
-      // Play Sound Feedback
-      if (status === 'Terlambat') playAudioBeep('late');
-      else playAudioBeep('success');
+        saveLocalStorage();
+        syncToGoogleSheets(student, status, timeStr, isCheckOut ? 'PULANG' : 'MASUK');
 
-      // Sync to local storage & GAS
-      saveLocalStorage();
-      syncToGoogleSheets(student, status, timeStr, isCheckOut ? 'PULANG' : 'MASUK');
+        const msg = isCheckOut
+          ? `Presensi Pulang Berhasil (${timeStr} WIB)`
+          : (status === 'Terlambat'
+              ? `Terlambat ${lateMinutes} Menit (Jam Masuk: ${timeStr})`
+              : `Hadir Tepat Waktu (${timeStr} WIB)`);
 
-      // Show Result View Card
-      const msg = isCheckOut ? `Presensi Pulang Berhasil (${timeStr} WIB)` : (status === 'Terlambat' ? `Terlambat ${lateMinutes} Menit (Jam Masuk: ${timeStr})` : `Hadir Tepat Waktu (${timeStr} WIB)`);
-      showScanResult(student, true, msg, modeText, status, isCheckOut);
-      renderDashboard();
-      renderAttendanceLogTable();
+        showScanResult(student, true, msg, modeText, status, isCheckOut);
+        renderDashboard();
+        renderAttendanceLogTable();
+      });
     }
 
     function showScanResult(student, success, message, modeText, status = 'Hadir', isCheckOut = false) {
@@ -1753,7 +1781,7 @@
     let chartInstance = null;
 
     function renderDashboard() {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = getLocalDateString();
       const todayLogs = attendanceLogs.filter(l => l.date === todayStr);
 
       document.getElementById('dashTotalStudents').innerText = studentData.length;
@@ -1871,13 +1899,16 @@
         nama: student.name,
         kelas: student.class,
         waktu: timeStr,
-        tanggal: new Date().toISOString().slice(0, 10),
+        tanggal: getLocalDateString(),
         status: status,
         tipe: type
       };
       postToGAS(payload).then(() => {
-        // Beri Apps Script waktu menulis, lalu ambil database terbaru.
-        setTimeout(loadStudentsFromGoogleSheets, 700);
+        // Beri Apps Script waktu menulis, lalu ambil data server terbaru.
+        setTimeout(() => {
+          loadAttendanceFromGoogleSheets(true);
+          loadStudentsFromGoogleSheets(true);
+        }, 900);
       }).catch(() => {});
     }
 
@@ -1905,49 +1936,92 @@
       });
     }
 
-    function loadAttendanceFromGoogleSheets(silent = true) {
+    function loadAttendanceFromGoogleSheets(silent = true, done = null) {
       const url = document.getElementById('gasScriptUrl')?.value.trim();
-      if (!url) return;
-      const callbackName = 'spensaAttendance_' + Date.now();
+      if (!url) {
+        if (typeof done === 'function') done(false);
+        return;
+      }
+
+      const callbackName = 'spensaAttendance_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
       const script = document.createElement('script');
-      const timeout = setTimeout(() => cleanup(), 15000);
+      let finished = false;
+      const timeout = setTimeout(() => {
+        cleanup();
+        if (typeof done === 'function') done(false);
+      }, 12000);
+
       function cleanup() {
         clearTimeout(timeout);
         delete window[callbackName];
         if (script.parentNode) script.parentNode.removeChild(script);
       }
-      window[callbackName] = function(response) {
+
+      function finish(ok) {
+        if (finished) return;
+        finished = true;
         cleanup();
-        if (!response || response.status !== 'success' || !Array.isArray(response.data)) return;
+        if (typeof done === 'function') done(ok);
+      }
+
+      window[callbackName] = function(response) {
+        if (!response || response.status !== 'success' || !Array.isArray(response.data)) {
+          finish(false);
+          return;
+        }
+
         const grouped = {};
         response.data.forEach(r => {
           const nis = String(r.nis || '').trim();
           const date = String(r.date || '').trim();
           if (!nis || !date) return;
+
           const key = nis + '|' + date;
-          if (!grouped[key]) grouped[key] = {
-            id: 'server_' + key,
-            studentId: nis,
-            date: date,
-            timeIn: '-', timeOut: '-', status: r.status || 'Hadir',
-            lateMinutes: Number(r.lateMinutes || 0),
-            mode: r.mode || 'Server'
-          };
-          const tipe = String(r.tipe || '').toUpperCase();
-          if (tipe === 'PULANG') grouped[key].timeOut = r.time || '-';
-          else grouped[key].timeIn = r.time || grouped[key].timeIn;
+          if (!grouped[key]) {
+            grouped[key] = {
+              id: 'server_' + key,
+              studentId: nis,
+              date: date,
+              timeIn: '-',
+              timeOut: '-',
+              status: r.status || 'Hadir',
+              lateMinutes: Number(r.lateMinutes || 0),
+              mode: r.mode || 'Server'
+            };
+          }
+
+          // Code.gs mengirim field "type"; kompatibel juga jika backend mengirim "tipe".
+          const tipe = String(r.tipe || r.type || '').toUpperCase();
+
+          if (tipe === 'PULANG') {
+            grouped[key].timeOut = r.time || grouped[key].timeOut;
+          } else if (tipe === 'MASUK' || !tipe) {
+            grouped[key].timeIn = r.time || grouped[key].timeIn;
+          }
+
           if (r.status) grouped[key].status = r.status;
+          if (r.mode) grouped[key].mode = r.mode;
         });
-        attendanceLogs = Object.values(grouped).sort((a,b) => {
-          return (String(b.date) + String(b.timeIn)).localeCompare(String(a.date) + String(a.timeIn));
-        });
+
+        attendanceLogs = Object.values(grouped).sort((a, b) =>
+          (String(b.date) + String(b.timeIn)).localeCompare(String(a.date) + String(a.timeIn))
+        );
+
         renderDashboard();
         renderAttendanceLogTable();
-        if (!silent) showToast(`Berhasil memuat ${attendanceLogs.length} rekap absensi dari Google Sheet.`, 'success');
+
+        if (!silent) {
+          showToast(`Berhasil memuat ${attendanceLogs.length} rekap absensi dari Google Sheet.`, 'success');
+        }
+
+        finish(true);
       };
+
       const separator = url.includes('?') ? '&' : '?';
       script.src = url + separator + 'action=getAttendance&callback=' + encodeURIComponent(callbackName);
-      script.onerror = cleanup;
+      script.onerror = function() {
+        finish(false);
+      };
       document.head.appendChild(script);
     }
 
@@ -1958,7 +2032,7 @@
       spensaSyncTimer = setInterval(() => {
         const url = document.getElementById('gasScriptUrl')?.value.trim();
         if (url && document.visibilityState === 'visible') { loadStudentsFromGoogleSheets(true); loadAttendanceFromGoogleSheets(true); }
-      }, 30000);
+      }, 5000);
     }
 
     function testGASConnection() {
