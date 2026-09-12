@@ -1432,8 +1432,15 @@
 
         // Setelah server dimuat, cari data berdasarkan studentId maupun NIS.
         let logIndex = attendanceLogs.findIndex(l =>
-          (String(l.studentId) === String(student.id) || String(l.studentId) === String(student.nis)) &&
-          l.date === todayStr
+          l.date === todayStr &&
+          (
+            String(l.studentId) === String(student.id) ||
+            String(l.studentId) === String(student.nis) ||
+            (
+              String(l.studentName || '').trim() &&
+              String(l.studentName || '').trim().toLowerCase() === String(student.name || '').trim().toLowerCase()
+            )
+          )
         );
 
         let status = 'Hadir';
@@ -1795,20 +1802,35 @@
       if (todayLogs.length === 0) {
         feedContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-xs font-medium">Belum ada aktivitas presensi hari ini.</div>`;
       } else {
-        feedContainer.innerHTML = todayLogs.slice(0, 6).map(l => {
-          const s = studentData.find(st => st.id === l.studentId) || { name: 'Siswa' };
+        feedContainer.innerHTML = todayLogs.slice(0, 8).map(l => {
+          const s = studentData.find(st =>
+            String(st.id) === String(l.studentId) ||
+            (
+              String(l.studentName || '').trim() &&
+              String(st.name || '').trim().toLowerCase() === String(l.studentName || '').trim().toLowerCase()
+            )
+          ) || { name: l.studentName || 'Peserta' };
+
+          const isPulang = String(l.lastType || '').toUpperCase() === 'PULANG';
+          const activityLabel = isPulang ? 'PRESENSI PULANG' : 'PRESENSI MASUK';
+          const activityTime = l.lastTime || l.timeIn || '-';
+          const activityClass = isPulang
+            ? 'bg-blue-100 text-blue-600'
+            : 'bg-emerald-100 text-emerald-600';
+
           return `
             <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
               <div class="flex items-center space-x-3">
-                <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                  <i class="fa-solid fa-user-check"></i>
+                <div class="w-8 h-8 rounded-lg ${activityClass} flex items-center justify-center font-bold">
+                  <i class="fa-solid ${isPulang ? 'fa-right-from-bracket' : 'fa-user-check'}"></i>
                 </div>
                 <div>
                   <span class="font-bold text-slate-800 block">${s.name}</span>
-                  <span class="text-[10px] text-slate-400">${l.timeIn} WIB • ${l.mode}</span>
+                  <span class="text-[10px] text-slate-500 block">${activityLabel} • ${activityTime} WIB</span>
+                  <span class="text-[10px] text-slate-400">${l.mode || 'Server'}</span>
                 </div>
               </div>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${l.status === 'Hadir' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${l.status}</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isPulang ? 'bg-blue-100 text-blue-700' : (l.status === 'Hadir' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}">${isPulang ? 'Pulang' : l.status}</span>
             </div>
           `;
         }).join('');
@@ -1905,10 +1927,15 @@
       };
       postToGAS(payload).then(() => {
         // Beri Apps Script waktu menulis, lalu ambil data server terbaru.
+        // Retry kedua membantu jika penulisan Sheet sedikit terlambat.
         setTimeout(() => {
           loadAttendanceFromGoogleSheets(true);
           loadStudentsFromGoogleSheets(true);
-        }, 900);
+        }, 800);
+
+        setTimeout(() => {
+          loadAttendanceFromGoogleSheets(true);
+        }, 2200);
       }).catch(() => {});
     }
 
@@ -1971,41 +1998,80 @@
         }
 
         const grouped = {};
-        response.data.forEach(r => {
-          const nis = String(r.nis || '').trim();
-          const date = String(r.date || '').trim();
-          if (!nis || !date) return;
 
-          const key = nis + '|' + date;
+        response.data.forEach((r, index) => {
+          const nis = String(r.nis || '').trim();
+          const name = String(r.name || '').trim();
+          const date = String(r.date || '').trim();
+
+          // Jangan membuang absensi hanya karena NIS kosong.
+          // Gunakan NIS, atau nama peserta sebagai identitas cadangan.
+          if (!date || (!nis && !name)) return;
+
+          const identity = nis
+            ? 'nis:' + nis
+            : 'name:' + name.toLowerCase();
+
+          const key = identity + '|' + date;
+
           if (!grouped[key]) {
             grouped[key] = {
               id: 'server_' + key,
-              studentId: nis,
+              studentId: nis || '',
+              studentName: name,
               date: date,
               timeIn: '-',
               timeOut: '-',
               status: r.status || 'Hadir',
               lateMinutes: Number(r.lateMinutes || 0),
-              mode: r.mode || 'Server'
+              mode: r.mode || 'Server',
+              lastType: '',
+              lastTime: '-',
+              lastTimestamp: '',
+              _lastOrder: -1
             };
           }
 
           // Code.gs mengirim field "type"; kompatibel juga jika backend mengirim "tipe".
           const tipe = String(r.tipe || r.type || '').toUpperCase();
+          const waktu = String(r.time || '').trim();
+          const timestamp = String(r.timestamp || '').trim();
 
           if (tipe === 'PULANG') {
-            grouped[key].timeOut = r.time || grouped[key].timeOut;
+            grouped[key].timeOut = waktu || grouped[key].timeOut;
           } else if (tipe === 'MASUK' || !tipe) {
-            grouped[key].timeIn = r.time || grouped[key].timeIn;
+            // Hanya isi jam masuk jika belum ada; event berikutnya tetap menjadi
+            // aktivitas terbaru.
+            if (grouped[key].timeIn === '-') {
+              grouped[key].timeIn = waktu || grouped[key].timeIn;
+            }
           }
 
           if (r.status) grouped[key].status = r.status;
           if (r.mode) grouped[key].mode = r.mode;
+
+          // Simpan event terakhir untuk Live Feed.
+          // Urutan response berasal dari urutan data Sheet.
+          grouped[key].lastType = tipe || grouped[key].lastType || 'MASUK';
+          grouped[key].lastTime = waktu || grouped[key].lastTime;
+          grouped[key].lastTimestamp = timestamp || grouped[key].lastTimestamp;
+          grouped[key]._lastOrder = index;
+
+          // Jika server mengirim identitas yang cocok dengan peserta,
+          // gunakan ID lokal agar tabel dan live feed dapat menemukan siswa.
+          if (!grouped[key].studentId && name) {
+            const matched = studentData.find(s =>
+              String(s.name || '').trim().toLowerCase() === name.toLowerCase()
+            );
+            if (matched) grouped[key].studentId = matched.id;
+          }
         });
 
-        attendanceLogs = Object.values(grouped).sort((a, b) =>
-          (String(b.date) + String(b.timeIn)).localeCompare(String(a.date) + String(a.timeIn))
-        );
+        attendanceLogs = Object.values(grouped).sort((a, b) => {
+          const aKey = String(a.date) + '|' + String(a.lastTimestamp || '') + '|' + String(a.lastTime || '') + '|' + String(a._lastOrder || 0);
+          const bKey = String(b.date) + '|' + String(b.lastTimestamp || '') + '|' + String(b.lastTime || '') + '|' + String(b._lastOrder || 0);
+          return bKey.localeCompare(aKey);
+        });
 
         renderDashboard();
         renderAttendanceLogTable();
@@ -2029,10 +2095,23 @@
     let spensaSyncTimer = null;
     function startServerSync() {
       if (spensaSyncTimer) clearInterval(spensaSyncTimer);
-      spensaSyncTimer = setInterval(() => {
+
+      const refreshServerData = () => {
         const url = document.getElementById('gasScriptUrl')?.value.trim();
-        if (url && document.visibilityState === 'visible') { loadStudentsFromGoogleSheets(true); loadAttendanceFromGoogleSheets(true); }
-      }, 5000);
+        if (url && document.visibilityState === 'visible') {
+          loadStudentsFromGoogleSheets(true);
+          loadAttendanceFromGoogleSheets(true);
+        }
+      };
+
+      spensaSyncTimer = setInterval(refreshServerData, 3000);
+
+      // Saat browser kembali aktif/fokus, segera ambil kondisi server terbaru.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          setTimeout(refreshServerData, 150);
+        }
+      });
     }
 
     function testGASConnection() {
