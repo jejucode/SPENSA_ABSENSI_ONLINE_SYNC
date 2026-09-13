@@ -1119,7 +1119,7 @@
     }
 
     function loadGASUrl() {
-      const currentUrl = 'https://script.google.com/macros/s/AKfycbxBaWKuIhimn7Y8N45zsSTef1glQWx_Yeg0mp4WtGMsI_LXfHiRAo61eB7CDy9WP5lG/exec';
+      const currentUrl = 'https://script.google.com/macros/s/AKfycbxGCyK2k1uU288GUlGBUJ_9v2_9REObpwrBRGuRouhEYHD1gIU-yq7KVSgwChdvCCxksQ/exec';
       const input = document.getElementById('gasScriptUrl');
       if (input) input.value = currentUrl;
       localStorage.setItem('spensa_gas_url', currentUrl);
@@ -1171,6 +1171,9 @@
         renderStudentTable();
         setupQuickTapButtons();
         showToast(`Berhasil memuat ${studentData.length} data dari Google Sheet.`, 'success');
+
+        // Setelah master peserta siap, langsung sinkronkan absensi dari server.
+        loadAttendanceFromGoogleSheets(true);
       };
 
       const separator = url.includes('?') ? '&' : '?';
@@ -1206,11 +1209,11 @@
 
       // Default date picker to today
       document.getElementById('logFilterDate').value = localDateYMD();
-      loadAttendanceFromGoogleSheets(true);
-      startAttendancePolling();
 
-      // Ambil data peserta terbaru dari Google Sheet jika URL GAS sudah diatur.
+      // Ambil data peserta terlebih dahulu. Setelah data peserta selesai,
+      // absensi server dimuat agar pemetaan NIS -> siswa selalu akurat.
       loadStudentsFromGoogleSheets();
+      startAttendancePolling();
     };
 
     function updateClock() {
@@ -1939,7 +1942,7 @@
     let chartInstance = null;
 
     function renderDashboard() {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = localDateYMD();
       const todayLogs = attendanceLogs.filter(l => l.date === todayStr);
 
       document.getElementById('dashTotalStudents').innerText = studentData.length;
