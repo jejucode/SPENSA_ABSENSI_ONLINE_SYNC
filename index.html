@@ -1436,8 +1436,8 @@
       const value = String(scannedValue || '').trim();
       if (!value) return;
 
-      // RFID reader biasanya mengirim beberapa karakter sangat cepat.
-      // Hindari double-trigger akibat satu tap.
+      // RFID reader mengirim karakter sangat cepat. Cooldown hanya mencegah
+      // satu tap terbaca dua kali; tidak menghambat tap berikutnya setelah 900 ms.
       const nowMs = Date.now();
       if (nowMs < rfidProcessingUntil) return;
       if (modeText === 'RFID Tap') rfidProcessingUntil = nowMs + 900;
@@ -1448,8 +1448,13 @@
         return;
       }
 
-      // Respons visual dibuat segera dari cache peserta lokal.
-      // Server tetap menjadi sumber keputusan dan validasi.
+      const finalType =
+        String(requestedType || attendanceMode || 'MASUK').toUpperCase() === 'PULANG'
+          ? 'PULANG'
+          : 'MASUK';
+
+      // Cache lokal hanya dipakai untuk preview cepat.
+      // Keputusan presensi tetap 100% dari server.
       const localStudent = studentData.find(s =>
         String(s.rfid || '').trim() === value ||
         String(s.nis || '').trim() === value ||
@@ -1457,34 +1462,49 @@
         String(s.name || '').trim().toLowerCase() === value.toLowerCase()
       );
 
-      const finalType = String(requestedType || attendanceMode || 'MASUK').toUpperCase() === 'PULANG' ? 'PULANG' : 'MASUK';
-
       if (localStudent) {
         showScanResult(
           localStudent,
           true,
-          finalType === 'PULANG' ? 'Mengirim presensi pulang...' : 'Mengirim presensi masuk...',
+          finalType === 'PULANG'
+            ? 'Memproses presensi pulang...'
+            : 'Memproses presensi masuk...',
           modeText,
-          finalType === 'PULANG' ? 'Hadir' : 'Hadir',
+          'Hadir',
           finalType === 'PULANG'
         );
+      } else {
+        // Tetap tampilkan proses walaupun browser belum selesai memuat Peserta.
+        document.getElementById('scanResultEmpty')?.classList.add('hidden');
+        document.getElementById('scanResultContent')?.classList.remove('hidden');
+        document.getElementById('scanResultBadge').innerText =
+          finalType === 'PULANG' ? 'PRESENSI PULANG' : 'PRESENSI MASUK';
+        document.getElementById('scanResType').innerText =
+          finalType === 'PULANG' ? 'JAM PULANG' : 'JAM MASUK';
+        document.getElementById('scanResTime').innerText = 'Memproses...';
+        document.getElementById('scanResStatusBox').innerText =
+          finalType === 'PULANG'
+            ? 'Memproses presensi pulang...'
+            : 'Memproses presensi masuk...';
       }
 
-      const callbackName = 'spensaScan_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      const callbackName =
+        'spensaScan_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
       const script = document.createElement('script');
       let finished = false;
       let timeout;
 
       const cleanup = () => {
+        clearTimeout(timeout);
         if (script.parentNode) script.parentNode.removeChild(script);
         delete window[callbackName];
-        clearTimeout(timeout);
       };
 
       timeout = setTimeout(() => {
         if (finished) return;
         finished = true;
         cleanup();
+        playAudioBeep('error');
         showToast('Server absensi tidak merespons. Coba scan lagi.', 'error');
       }, 8000);
 
@@ -1494,40 +1514,72 @@
         cleanup();
 
         if (!response || response.status !== 'success') {
-          const msg = response?.message || 'Gagal memproses absensi di server.';
+          const msg =
+            response?.message || 'Gagal memproses absensi di server.';
           const student = response?.student || localStudent || null;
+
           playAudioBeep('error');
-          showScanResult(student, false, msg, modeText, response?.attendance?.status || 'Hadir', finalType === 'PULANG');
-          showToast(msg, response?.code === 'WRONG_MODE' ? 'info' : 'error');
+          showScanResult(
+            student,
+            false,
+            msg,
+            modeText,
+            response?.attendance?.status || 'Hadir',
+            finalType === 'PULANG'
+          );
+          showToast(
+            msg,
+            response?.code === 'WRONG_MODE' ? 'info' : 'error'
+          );
+
+          // Ambil ulang server agar browser kembali ke keadaan pusat.
+          setTimeout(() => loadAttendanceFromGoogleSheets(true), 250);
           return;
         }
 
         const student = response.student || localStudent;
         const att = response.attendance || {};
-        const actualType = String(att.type || att.tipe || finalType).toUpperCase();
+        const actualType =
+          String(att.type || att.tipe || finalType).toUpperCase();
         const isCheckOut = actualType === 'PULANG';
         const status = att.status || 'Hadir';
         const lateMinutes = Number(att.lateMinutes || 0);
-        const timeStr = att.time || new Date().toLocaleTimeString('id-ID', {hour12:false});
+        const timeStr =
+          att.time ||
+          new Date().toLocaleTimeString('id-ID', { hour12: false });
 
-        playAudioBeep(status === 'Terlambat' && !isCheckOut ? 'late' : 'success');
+        playAudioBeep(
+          status === 'Terlambat' && !isCheckOut ? 'late' : 'success'
+        );
 
         const msg = isCheckOut
           ? `Presensi Pulang Berhasil (${timeStr} WIB)`
-          : (status === 'Terlambat'
-              ? `Terlambat ${lateMinutes} Menit (Jam Masuk: ${timeStr})`
-              : `Hadir Tepat Waktu (${timeStr} WIB)`);
+          : status === 'Terlambat'
+            ? `Terlambat ${lateMinutes} Menit (Jam Masuk: ${timeStr})`
+            : `Hadir Tepat Waktu (${timeStr} WIB)`;
 
-        showScanResult(student, true, msg, modeText, status, isCheckOut);
+        // Tampilkan hasil server seketika.
+        showScanResult(
+          student,
+          true,
+          msg,
+          modeText,
+          status,
+          isCheckOut
+        );
+
+        // Render lokal hanya sebagai respons cepat.
+        // Data resmi kemudian diambil kembali dari Google Sheets.
         renderDashboard();
         renderAttendanceLogTable();
 
-        // Ambil kondisi server setelah penulisan, tanpa menahan respon tap.
-        setTimeout(() => loadAttendanceFromGoogleSheets(true), 200);
+        // Refresh pusat dengan sedikit jeda agar appendRow sudah terlihat.
+        setTimeout(() => loadAttendanceFromGoogleSheets(true), 300);
       };
 
       const separator = url.includes('?') ? '&' : '?';
-      script.src = url + separator +
+      script.src =
+        url + separator +
         'action=scanAttendance' +
         '&value=' + encodeURIComponent(value) +
         '&requestedType=' + encodeURIComponent(finalType) +
@@ -1539,6 +1591,7 @@
         if (finished) return;
         finished = true;
         cleanup();
+        playAudioBeep('error');
         showToast('Gagal menghubungi server absensi.', 'error');
       };
 
@@ -2005,6 +2058,7 @@
     }
 
     function loadAttendanceFromGoogleSheets(silent = true, done = null) {
+      const requestSeq = ++attendanceSyncRequestSeq;
       const url = document.getElementById('gasScriptUrl')?.value.trim();
       if (!url) {
         if (typeof done === 'function') done(false);
@@ -2033,6 +2087,11 @@
       }
 
       window[callbackName] = function(response) {
+        if (requestSeq !== attendanceSyncRequestSeq) {
+          finish(false);
+          return;
+        }
+
         if (!response || response.status !== 'success' || !Array.isArray(response.data)) {
           finish(false);
           return;
@@ -2134,6 +2193,7 @@
 
     // Polling ringan: komputer lain akan mendapatkan perubahan tanpa reload manual.
     let spensaSyncTimer = null;
+    let attendanceSyncRequestSeq = 0;
     function startServerSync() {
       if (spensaSyncTimer) clearInterval(spensaSyncTimer);
 
