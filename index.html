@@ -132,7 +132,7 @@
           <div>
             <div class="flex items-center space-x-2">
               <span class="font-black text-lg tracking-wider text-white">PORTAL SPENSA</span>
-              <span class="bg-emerald-600/80 text-emerald-100 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-500">v1.3.2 • GAS</span>
+              <span class="bg-blue-800/80 text-blue-200 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-700">v1.3.1</span>
             </div>
             <p class="text-xs text-blue-200/80 font-medium">SMP Negeri 1 Padang Panjang</p>
           </div>
@@ -396,6 +396,16 @@
               <p class="text-xs font-bold text-white bg-slate-900/80 backdrop-blur px-3 py-1 rounded-full mt-4 border border-slate-700">Arahkan Kode QR ke dalam Kotak</p>
             </div>
 
+            <div id="cameraControlBar" class="absolute left-4 right-4 bottom-4 z-20 hidden md:flex items-center gap-2 bg-slate-950/80 backdrop-blur p-2 rounded-xl border border-slate-700">
+              <i class="fa-solid fa-video text-blue-400"></i>
+              <select id="cameraSelect" class="flex-1 bg-slate-900 text-slate-200 text-xs rounded-lg border border-slate-700 px-2 py-1.5 focus:outline-none" onchange="switchCameraDevice()">
+                <option value="">Kamera default</option>
+              </select>
+              <button onclick="refreshCameraList()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white" title="Muat ulang daftar kamera">
+                <i class="fa-solid fa-rotate"></i>
+              </button>
+            </div>
+
             <button id="btnStopCam" onclick="stopWebcamScanner()" class="hidden absolute top-4 right-4 bg-rose-600/90 hover:bg-rose-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold shadow transition">
               <i class="fa-solid fa-stop"></i> Matikan Kamera
             </button>
@@ -419,16 +429,6 @@
             <div class="mt-4 flex flex-wrap justify-center gap-2">
               <span class="text-[11px] bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">Auto-Detect Tap</span>
               <span class="text-[11px] bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">Suara Audio Feedback</span>
-            </div>
-
-            <!-- Pemisah Presensi Masuk / Pulang. Tidak mengubah tema tampilan utama. -->
-            <div class="mt-4 flex items-center justify-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-              <button id="btn-attendance-masuk" onclick="setAttendanceMode('MASUK')" class="px-4 py-2 rounded-lg text-xs font-bold transition bg-emerald-600 text-white shadow">
-                <i class="fa-solid fa-right-to-bracket mr-1"></i> Presensi Masuk
-              </button>
-              <button id="btn-attendance-pulang" onclick="setAttendanceMode('PULANG')" class="px-4 py-2 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white">
-                <i class="fa-solid fa-right-from-bracket mr-1"></i> Presensi Pulang
-              </button>
             </div>
           </div>
 
@@ -771,7 +771,7 @@
       <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div>
           <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Pilih Tanggal</label>
-          <input type="date" id="logFilterDate" onchange="renderAttendanceLogTable()" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none">
+          <input type="date" id="logFilterDate" onchange="loadAttendanceFromGoogleSheets(true)" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none">
         </div>
 
         <div>
@@ -880,7 +880,7 @@
           <div class="space-y-3">
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">URL Google Apps Script Web App</label>
-              <input type="url" id="gasScriptUrl" value="https://script.google.com/macros/s/AKfycbxBaWKuIhimn7Y8N45zsSTef1glQWx_Yeg0mp4WtGMsI_LXfHiRAo61eB7CDy9WP5lG/exec" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono">
+              <input type="url" id="gasScriptUrl" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono">
             </div>
 
             <div class="flex items-center justify-between pt-2">
@@ -894,7 +894,7 @@
 
             <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600">
               <span class="font-bold block text-slate-800 mb-0.5">Metode Operasi Dual-Sync:</span>
-              Google Sheets menjadi database pusat. Setiap komputer menggunakan URL GAS yang sama, mengambil data Peserta dan Absensi dari server, serta melakukan refresh otomatis setiap 30 detik.
+              Aplikasi ini berfungsi 100% lancar secara lokal (Offline mode) dan dapat menyinkronkan data presensi ke Spreadsheet Google secara real-time saat webhook diisi.
             </div>
           </div>
         </div>
@@ -1046,19 +1046,10 @@
 
   <script>
 
-    // ============================================================
-    // GOOGLE APPS SCRIPT - ENDPOINT UTAMA
-    // Google Sheets menjadi database pusat untuk semua komputer.
-    // ============================================================
-    const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxBaWKuIhimn7Y8N45zsSTef1glQWx_Yeg0mp4WtGMsI_LXfHiRAo61eB7CDy9WP5lG/exec';
-
     // Global App State
     let currentRole = 'admin'; // 'admin', 'scanner', 'student'
     let currentTab = 'dashboard';
     let scanMode = 'qr'; // 'qr', 'rfid', 'manual'
-    // Mode presensi dipisahkan: operator memilih MASUK atau PULANG.
-    let attendanceMode = 'MASUK';
-    let rfidProcessingUntil = 0;
     let webcamStream = null;
     let webcamScanning = false;
     let cardTheme = 'blue';
@@ -1122,43 +1113,31 @@
     // A=NIS | B=Nama | C=Kelas | D=Jenis | E=RFID | F=Foto
     // ============================================================
     function saveGASUrl() {
-      const input = document.getElementById('gasScriptUrl');
-      const url = input.value.trim() || DEFAULT_GAS_URL;
-
-      input.value = url;
-      localStorage.setItem('spensa_gas_url', url);
+      const url = document.getElementById('gasScriptUrl').value.trim();
+      if (url) localStorage.setItem('spensa_gas_url', url);
       return url;
     }
 
     function loadGASUrl() {
+      const currentUrl = 'https://script.google.com/macros/s/AKfycbxBaWKuIhimn7Y8N45zsSTef1glQWx_Yeg0mp4WtGMsI_LXfHiRAo61eB7CDy9WP5lG/exec';
       const input = document.getElementById('gasScriptUrl');
-      const savedUrl = (localStorage.getItem('spensa_gas_url') || '').trim();
-
-      // PENTING: gunakan deployment GAS aktif sebagai sumber utama.
-      // Browser lama mungkin masih menyimpan URL deployment sebelumnya di localStorage.
-      // URL lama itulah yang dapat membuat absensi terlihat berjalan tetapi tidak masuk
-      // ke Spreadsheet yang sekarang.
-      const activeUrl = DEFAULT_GAS_URL;
-      input.value = activeUrl;
-      localStorage.setItem('spensa_gas_url', activeUrl);
-
-      if (savedUrl && savedUrl !== activeUrl) {
-        console.info('GAS URL lama diganti dengan deployment aktif.');
-      }
+      if (input) input.value = currentUrl;
+      localStorage.setItem('spensa_gas_url', currentUrl);
+      return currentUrl;
     }
 
-    function loadStudentsFromGoogleSheets(silent = false) {
+    function loadStudentsFromGoogleSheets() {
       const url = document.getElementById('gasScriptUrl').value.trim();
       if (!url) return;
 
-      if (!silent) showToast('Mengambil data Peserta dari Google Sheet...', 'info');
+      showToast('Mengambil data Peserta dari Google Sheet...', 'info');
 
       const callbackName = 'spensaParticipants_' + Date.now();
       const script = document.createElement('script');
       const timeout = setTimeout(() => {
         cleanup();
         console.warn('Google Sheet timeout');
-        showToast('Google Sheet belum merespons. Silakan coba lagi.', 'error');
+        showToast('Data Google Sheet belum dapat dimuat. Data lokal tetap digunakan.', 'error');
       }, 15000);
 
       function cleanup() {
@@ -1184,14 +1163,14 @@
           role: String(s.role || '').trim() || 'Siswa'
         })).filter(s => s.nis || s.name || s.rfid);
 
-        // Google Sheet adalah sumber data utama.
-        // Jangan menjadikan localStorage sebagai database peserta; hanya cache tampilan.
+        // Google Sheet menjadi sumber data utama.
+        localStorage.setItem('spensa_students', JSON.stringify(studentData));
         refreshStudentClassFilter();
         renderDashboard();
         populateCardStudentDropdown();
         renderStudentTable();
         setupQuickTapButtons();
-        if (!silent) showToast(`Berhasil memuat ${studentData.length} data dari Google Sheet.`, 'success');
+        showToast(`Berhasil memuat ${studentData.length} data dari Google Sheet.`, 'success');
       };
 
       const separator = url.includes('?') ? '&' : '?';
@@ -1214,6 +1193,8 @@
 
       // Initialize Scanner Keyboard Listener for RFID USB Scanner
       setupRFIDKeyboardListener();
+      // Siapkan daftar webcam PC (label kamera muncul setelah izin kamera diberikan).
+      refreshCameraList();
 
       // Render Initial Data Views
       refreshStudentClassFilter();
@@ -1224,12 +1205,12 @@
       setupQuickTapButtons();
 
       // Default date picker to today
-      document.getElementById('logFilterDate').value = getLocalDateString();
+      document.getElementById('logFilterDate').value = localDateYMD();
+      loadAttendanceFromGoogleSheets(true);
+      startAttendancePolling();
 
       // Ambil data peserta terbaru dari Google Sheet jika URL GAS sudah diatur.
       loadStudentsFromGoogleSheets();
-      loadAttendanceFromGoogleSheets(true);
-      startServerSync();
     };
 
     function updateClock() {
@@ -1308,7 +1289,6 @@
 
     function setScanMode(mode) {
       scanMode = mode;
-      if (mode === 'rfid') setAttendanceMode(attendanceMode);
 
       document.getElementById('btn-mode-qr').className = mode === 'qr' ? 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center space-x-2 bg-blue-600 text-white shadow' : 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center space-x-2 text-slate-600 hover:text-slate-900';
       document.getElementById('btn-mode-rfid').className = mode === 'rfid' ? 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center space-x-2 bg-blue-600 text-white shadow' : 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center space-x-2 text-slate-600 hover:text-slate-900';
@@ -1322,22 +1302,68 @@
     }
 
     // Webcam QR Code Scanner logic
-    async function startWebcamScanner() {
+    // Catatan: getUserMedia membutuhkan HTTPS (atau localhost) dan izin kamera dari browser.
+    async function refreshCameraList() {
+      const select = document.getElementById('cameraSelect');
+      if (!select || !navigator.mediaDevices?.enumerateDevices) return;
       try {
-        webcamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        const current = select.value;
+        select.innerHTML = '<option value="">Kamera default</option>';
+        cams.forEach((cam, i) => {
+          const opt = document.createElement('option');
+          opt.value = cam.deviceId;
+          opt.textContent = cam.label || `Kamera ${i + 1}`;
+          select.appendChild(opt);
+        });
+        if ([...select.options].some(o => o.value === current)) select.value = current;
+      } catch (e) {
+        console.warn('Tidak dapat membaca daftar kamera', e);
+      }
+    }
+
+    async function startWebcamScanner(deviceId = '') {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('Browser ini tidak mendukung akses kamera. Gunakan Chrome/Edge terbaru melalui HTTPS.', 'error');
+        return;
+      }
+      try {
+        if (webcamStream) webcamStream.getTracks().forEach(track => track.stop());
+        const selected = deviceId || document.getElementById('cameraSelect')?.value || '';
+        const videoConstraints = selected
+          ? { deviceId: { exact: selected }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } };
+        webcamStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
         const video = document.getElementById('webcamVideo');
         video.srcObject = webcamStream;
+        video.setAttribute('playsinline', '');
         video.classList.remove('hidden');
         document.getElementById('camPlaceholder').classList.add('hidden');
         document.getElementById('scanOverlay').classList.remove('hidden');
         document.getElementById('btnStopCam').classList.remove('hidden');
-        video.play();
+        document.getElementById('cameraControlBar')?.classList.remove('hidden');
+        await video.play();
         webcamScanning = true;
+        await refreshCameraList();
+        const activeId = webcamStream.getVideoTracks()[0]?.getSettings()?.deviceId;
+        if (activeId && document.getElementById('cameraSelect')) document.getElementById('cameraSelect').value = activeId;
         requestAnimationFrame(scanQRCodeFrame);
-        showToast('Kamera Scanner Aktif', 'success');
+        showToast('Kamera PC/Webcam aktif dan siap memindai QR.', 'success');
       } catch (err) {
-        showToast('Gagal mengakses kamera. Gunakan Mode Manual atau Tap RFID.', 'error');
+        console.error('Camera error:', err);
+        let msg = 'Gagal mengakses kamera.';
+        if (err?.name === 'NotAllowedError') msg = 'Izin kamera ditolak. Klik ikon kamera/gembok pada browser lalu pilih Izinkan.';
+        else if (err?.name === 'NotFoundError') msg = 'Kamera tidak ditemukan pada perangkat ini.';
+        else if (err?.name === 'NotReadableError') msg = 'Kamera sedang dipakai aplikasi lain. Tutup aplikasi kamera/meeting lalu coba lagi.';
+        else if (!window.isSecureContext) msg = 'Kamera memerlukan HTTPS. Buka aplikasi dari GitHub Pages/Cloudflare Pages, bukan file://.';
+        showToast(msg, 'error');
       }
+    }
+
+    async function switchCameraDevice() {
+      const deviceId = document.getElementById('cameraSelect')?.value || '';
+      if (webcamScanning) await startWebcamScanner(deviceId);
     }
 
     function stopWebcamScanner() {
@@ -1346,10 +1372,13 @@
         webcamStream = null;
       }
       webcamScanning = false;
+      const video = document.getElementById('webcamVideo');
+      if (video) video.srcObject = null;
       document.getElementById('webcamVideo').classList.add('hidden');
       document.getElementById('camPlaceholder').classList.remove('hidden');
       document.getElementById('scanOverlay').classList.add('hidden');
       document.getElementById('btnStopCam').classList.add('hidden');
+      document.getElementById('cameraControlBar')?.classList.add('hidden');
     }
 
     function scanQRCodeFrame() {
@@ -1397,7 +1426,7 @@
         if (e.key === 'Enter') {
           if (rfidBuffer.length > 3) {
             document.getElementById('rfidBufferInput').value = rfidBuffer;
-            processScannedCode(rfidBuffer, 'RFID Tap', 'AUTO', attendanceMode);
+            processScannedCode(rfidBuffer, 'RFID Tap');
             rfidBuffer = '';
           }
         } else if (e.key.length === 1) {
@@ -1412,55 +1441,30 @@
       const code = document.getElementById('manualInputID').value.trim();
       const statusOverride = document.getElementById('manualInputStatus').value;
       if (code) {
-        processScannedCode(code, 'Input Manual', statusOverride, attendanceMode);
+        processScannedCode(code, 'Input Manual', statusOverride);
         document.getElementById('manualInputID').value = '';
       }
     }
 
-    function getLocalDateString(date = new Date()) {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
-
-    function setAttendanceMode(mode) {
-      attendanceMode = String(mode || 'MASUK').toUpperCase() === 'PULANG' ? 'PULANG' : 'MASUK';
-      const masuk = document.getElementById('btn-attendance-masuk');
-      const pulang = document.getElementById('btn-attendance-pulang');
-      if (!masuk || !pulang) return;
-
-      masuk.className = attendanceMode === 'MASUK'
-        ? 'px-4 py-2 rounded-lg text-xs font-bold transition bg-emerald-600 text-white shadow'
-        : 'px-4 py-2 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white';
-      pulang.className = attendanceMode === 'PULANG'
-        ? 'px-4 py-2 rounded-lg text-xs font-bold transition bg-blue-600 text-white shadow'
-        : 'px-4 py-2 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white';
-    }
-
-    function processScannedCode(scannedValue, modeText, statusOverride = 'AUTO', requestedType = null) {
+    function processScannedCode(scannedValue, modeText, statusOverride = 'AUTO') {
       const value = String(scannedValue || '').trim();
       if (!value) return;
 
-      // RFID reader mengirim karakter sangat cepat. Cooldown hanya mencegah
-      // satu tap terbaca dua kali; tidak menghambat tap berikutnya setelah 900 ms.
+      // Cegah satu tap RFID terbaca berkali-kali oleh keyboard scanner.
       const nowMs = Date.now();
-      if (nowMs < rfidProcessingUntil) return;
-      if (modeText === 'RFID Tap') rfidProcessingUntil = nowMs + 900;
+      if (window._lastSpensaRFID === value && nowMs - (window._lastSpensaRFIDAt || 0) < 900) return;
+      window._lastSpensaRFID = value;
+      window._lastSpensaRFIDAt = nowMs;
 
-      const url = document.getElementById('gasScriptUrl')?.value.trim();
+      const url = loadGASUrl();
       if (!url) {
+        showScanResult(null, false, 'URL Google Apps Script belum diatur.', modeText);
         showToast('URL Google Apps Script belum diatur.', 'error');
         return;
       }
 
-      const finalType =
-        String(requestedType || attendanceMode || 'MASUK').toUpperCase() === 'PULANG'
-          ? 'PULANG'
-          : 'MASUK';
-
-      // Cache lokal hanya dipakai untuk preview cepat.
-      // Keputusan presensi tetap 100% dari server.
+      // Cari data lokal hanya untuk preview cepat. Keputusan MASUK/PULANG
+      // dan pencatatan tetap dilakukan oleh server Google Sheets.
       const localStudent = studentData.find(s =>
         String(s.rfid || '').trim() === value ||
         String(s.nis || '').trim() === value ||
@@ -1469,139 +1473,186 @@
       );
 
       if (localStudent) {
-        showScanResult(
-          localStudent,
-          true,
-          finalType === 'PULANG'
-            ? 'Memproses presensi pulang...'
-            : 'Memproses presensi masuk...',
-          modeText,
-          'Hadir',
-          finalType === 'PULANG'
-        );
-      } else {
-        // Tetap tampilkan proses walaupun browser belum selesai memuat Peserta.
         document.getElementById('scanResultEmpty')?.classList.add('hidden');
         document.getElementById('scanResultContent')?.classList.remove('hidden');
-        document.getElementById('scanResultBadge').innerText =
-          finalType === 'PULANG' ? 'PRESENSI PULANG' : 'PRESENSI MASUK';
-        document.getElementById('scanResType').innerText =
-          finalType === 'PULANG' ? 'JAM PULANG' : 'JAM MASUK';
-        document.getElementById('scanResTime').innerText = 'Memproses...';
-        document.getElementById('scanResStatusBox').innerText =
-          finalType === 'PULANG'
-            ? 'Memproses presensi pulang...'
-            : 'Memproses presensi masuk...';
+        const nameEl = document.getElementById('scanResName');
+        if (nameEl) nameEl.innerText = localStudent.name;
+        const classEl = document.getElementById('scanResClass');
+        if (classEl) classEl.innerText = `Kelas ${localStudent.class} • NISN: ${localStudent.nis}`;
       }
 
-      const callbackName =
-        'spensaScan_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      showToast('Memproses presensi ke Google Sheet...', 'info');
+
+      const callbackName = 'spensaScan_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
       const script = document.createElement('script');
       let finished = false;
-      let timeout;
-
       const cleanup = () => {
-        clearTimeout(timeout);
         if (script.parentNode) script.parentNode.removeChild(script);
-        delete window[callbackName];
+        try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
       };
-
-      timeout = setTimeout(() => {
+      const finishError = (message) => {
         if (finished) return;
         finished = true;
+        clearTimeout(timeout);
         cleanup();
         playAudioBeep('error');
-        showToast('Server absensi tidak merespons. Coba scan lagi.', 'error');
-      }, 8000);
+        showScanResult(null, false, message || 'Presensi gagal diproses.', modeText);
+        showToast(message || 'Presensi gagal diproses.', 'error');
+      };
+      const timeout = setTimeout(() => finishError('Server Google Sheet tidak merespons. Silakan coba lagi.'), 10000);
 
       window[callbackName] = function(response) {
         if (finished) return;
         finished = true;
+        clearTimeout(timeout);
         cleanup();
 
-        if (!response || response.status !== 'success') {
-          const msg =
-            response?.message || 'Gagal memproses absensi di server.';
-          const student = response?.student || localStudent || null;
-
+        if (!response || response.status !== 'success' || !response.student || !response.attendance) {
+          const msg = response?.message || 'Presensi gagal diproses oleh server.';
           playAudioBeep('error');
-          showScanResult(
-            student,
-            false,
-            msg,
-            modeText,
-            response?.attendance?.status || 'Hadir',
-            finalType === 'PULANG'
-          );
-          showToast(
-            msg,
-            response?.code === 'WRONG_MODE' ? 'info' : 'error'
-          );
-
-          // Ambil ulang server agar browser kembali ke keadaan pusat.
-          setTimeout(() => loadAttendanceFromGoogleSheets(true), 250);
+          showScanResult(null, false, msg, modeText);
+          showToast(msg, 'error');
+          setTimeout(() => loadAttendanceFromGoogleSheets(), 250);
           return;
         }
 
-        const student = response.student || localStudent;
-        const att = response.attendance || {};
-        const actualType =
-          String(att.type || att.tipe || finalType).toUpperCase();
-        const isCheckOut = actualType === 'PULANG';
-        const status = att.status || 'Hadir';
-        const lateMinutes = Number(att.lateMinutes || 0);
-        const timeStr =
-          att.time ||
-          new Date().toLocaleTimeString('id-ID', { hour12: false });
+        const student = response.student;
+        const a = response.attendance;
+        const isCheckOut = String(a.type || a.tipe || '').toUpperCase() === 'PULANG';
+        const status = a.status || 'Hadir';
+        const lateMinutes = Number(a.lateMinutes || 0);
 
-        playAudioBeep(
-          status === 'Terlambat' && !isCheckOut ? 'late' : 'success'
-        );
+        // Tampilkan hasil server secara langsung agar tidak menunggu polling.
+        if (status === 'Terlambat') playAudioBeep('late');
+        else playAudioBeep('success');
 
         const msg = isCheckOut
-          ? `Presensi Pulang Berhasil (${timeStr} WIB)`
-          : status === 'Terlambat'
-            ? `Terlambat ${lateMinutes} Menit (Jam Masuk: ${timeStr})`
-            : `Hadir Tepat Waktu (${timeStr} WIB)`;
+          ? `Presensi Pulang Berhasil (${a.time || '-'} WIB)`
+          : (status === 'Terlambat'
+              ? `Terlambat ${lateMinutes} Menit (Jam Masuk: ${a.time || '-'})`
+              : `Hadir Tepat Waktu (${a.time || '-'} WIB)`);
 
-        // Tampilkan hasil server seketika.
-        showScanResult(
-          student,
-          true,
-          msg,
-          modeText,
-          status,
-          isCheckOut
-        );
+        showScanResult(student, true, msg, modeText, status, isCheckOut);
+        showToast(isCheckOut ? 'Presensi pulang tersimpan di Google Sheet.' : 'Presensi masuk tersimpan di Google Sheet.', 'success');
 
-        // Render lokal hanya sebagai respons cepat.
-        // Data resmi kemudian diambil kembali dari Google Sheets.
-        renderDashboard();
-        renderAttendanceLogTable();
-
-        // Refresh pusat dengan sedikit jeda agar appendRow sudah terlihat.
-        setTimeout(() => loadAttendanceFromGoogleSheets(true), 300);
+        // Sinkronisasi penuh dari server. Google Sheet adalah sumber utama;
+        // localStorage hanya cache tampilan dan tidak boleh menimpa server.
+        setTimeout(() => loadAttendanceFromGoogleSheets(), 250);
       };
 
       const separator = url.includes('?') ? '&' : '?';
-      script.src =
-        url + separator +
-        'action=scanAttendance' +
-        '&value=' + encodeURIComponent(value) +
-        '&requestedType=' + encodeURIComponent(finalType) +
-        '&mode=' + encodeURIComponent(modeText || 'RFID') +
-        '&callback=' + encodeURIComponent(callbackName) +
-        '&_ts=' + Date.now();
+      const params = [
+        'action=scanAttendance',
+        'value=' + encodeURIComponent(value),
+        'requestedType=AUTO',
+        'mode=' + encodeURIComponent(modeText || 'RFID'),
+        '_ts=' + Date.now(),
+        'callback=' + encodeURIComponent(callbackName)
+      ].join('&');
+      script.src = url + separator + params;
+      script.onerror = () => finishError('Koneksi ke Google Apps Script gagal.');
+      document.head.appendChild(script);
+    }
 
-      script.onerror = function() {
+    // ============================================================
+    // ABSENSI ONLINE - GOOGLE SHEETS SEBAGAI SUMBER UTAMA
+    // ============================================================
+    let attendanceSyncSeq = 0;
+    let attendancePollTimer = null;
+
+    function localDateYMD(date = new Date()) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function loadAttendanceFromGoogleSheets(showMessage = false) {
+      const url = loadGASUrl();
+      if (!url) return;
+
+      const dateInput = document.getElementById('logFilterDate');
+      const date = dateInput?.value || localDateYMD();
+      const seq = ++attendanceSyncSeq;
+      const callbackName = 'spensaAttendance_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      const script = document.createElement('script');
+      let finished = false;
+      const cleanup = () => {
+        if (script.parentNode) script.parentNode.removeChild(script);
+        try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
+      };
+      const timeout = setTimeout(() => {
         if (finished) return;
         finished = true;
         cleanup();
-        playAudioBeep('error');
-        showToast('Gagal menghubungi server absensi.', 'error');
+        if (showMessage) showToast('Data absensi Google Sheet belum dapat dimuat.', 'error');
+      }, 10000);
+
+      window[callbackName] = function(response) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        cleanup();
+        if (seq !== attendanceSyncSeq) return;
+        if (!response || response.status !== 'success' || !Array.isArray(response.data)) {
+          if (showMessage) showToast(response?.message || 'Gagal membaca data absensi.', 'error');
+          return;
+        }
+
+        // Bentuk ulang log lokal dari data server untuk tanggal yang sedang ditampilkan.
+        const grouped = new Map();
+        response.data.forEach(row => {
+          const nis = String(row.nis || '').trim();
+          const student = studentData.find(s => String(s.nis || '').trim() === nis || String(s.id || '').trim() === nis) || {
+            id: nis || String(row.name || ''),
+            name: String(row.name || ''),
+            nis,
+            class: String(row.class || ''),
+            rfid: '',
+            photo: '',
+            role: 'Siswa'
+          };
+          const key = nis || String(student.id || row.name || '');
+          if (!key) return;
+          const type = String(row.type || row.tipe || '').toUpperCase();
+          let log = grouped.get(key);
+          if (!log) {
+            log = { id: 'server_' + key + '_' + date, studentId: student.id, date: row.date || date, timeIn: '-', timeOut: '-', status: row.status || 'Hadir', lateMinutes: 0, mode: row.mode || 'RFID' };
+            grouped.set(key, log);
+          }
+          if (type === 'MASUK') {
+            log.timeIn = row.time || log.timeIn;
+            log.status = row.status || log.status;
+            const m = String(row.status || '').match(/(\d+)/);
+            log.lateMinutes = m ? Number(m[1]) : (log.lateMinutes || 0);
+          } else if (type === 'PULANG') {
+            log.timeOut = row.time || log.timeOut;
+          }
+          log.mode = row.mode || log.mode;
+        });
+
+        attendanceLogs = Array.from(grouped.values()).sort((a,b) => String(b.timeIn).localeCompare(String(a.timeIn)));
+        // Jangan gunakan saveLocalStorage di sini untuk log: server harus tetap menjadi sumber utama.
+        renderDashboard();
+        renderAttendanceLogTable();
+        if (showMessage) showToast(`Absensi ${response.data.length} transaksi dimuat dari Google Sheet.`, 'success');
       };
 
-      document.body.appendChild(script);
+      const separator = url.includes('?') ? '&' : '?';
+      script.src = url + separator + 'action=getAttendance&date=' + encodeURIComponent(date) + '&_ts=' + Date.now() + '&callback=' + encodeURIComponent(callbackName);
+      script.onerror = function() {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        cleanup();
+        if (showMessage) showToast('Koneksi Google Apps Script gagal.', 'error');
+      };
+      document.head.appendChild(script);
+    }
+
+    function startAttendancePolling() {
+      if (attendancePollTimer) clearInterval(attendancePollTimer);
+      attendancePollTimer = setInterval(() => loadAttendanceFromGoogleSheets(false), 5000);
     }
 
     function showScanResult(student, success, message, modeText, status = 'Hadir', isCheckOut = false) {
@@ -1635,7 +1686,7 @@
     function setupQuickTapButtons() {
       const container = document.getElementById('quickTapContainer');
       container.innerHTML = studentData.slice(0, 4).map(s => `
-        <button onclick="processScannedCode('${s.rfid}', 'Simulasi Tap', 'AUTO', attendanceMode)" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 rounded-lg text-[11px] font-semibold transition">
+        <button onclick="processScannedCode('${s.rfid}', 'Simulasi Tap')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 rounded-lg text-[11px] font-semibold transition">
           <i class="fa-solid fa-bolt text-amber-500 mr-1"></i> ${s.name.split(' ')[0]}
         </button>
       `).join('');
@@ -1645,7 +1696,7 @@
       switchTab('scan');
       setScanMode('rfid');
       const randomStudent = studentData[Math.floor(Math.random() * studentData.length)];
-      processScannedCode(randomStudent.rfid, 'Simulasi Rapid', 'AUTO', attendanceMode);
+      processScannedCode(randomStudent.rfid, 'Simulasi Rapid');
     }
 
     function populateCardStudentDropdown() {
@@ -1888,7 +1939,7 @@
     let chartInstance = null;
 
     function renderDashboard() {
-      const todayStr = getLocalDateString();
+      const todayStr = new Date().toISOString().slice(0, 10);
       const todayLogs = attendanceLogs.filter(l => l.date === todayStr);
 
       document.getElementById('dashTotalStudents').innerText = studentData.length;
@@ -1902,35 +1953,20 @@
       if (todayLogs.length === 0) {
         feedContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-xs font-medium">Belum ada aktivitas presensi hari ini.</div>`;
       } else {
-        feedContainer.innerHTML = todayLogs.slice(0, 8).map(l => {
-          const s = studentData.find(st =>
-            String(st.id) === String(l.studentId) ||
-            (
-              String(l.studentName || '').trim() &&
-              String(st.name || '').trim().toLowerCase() === String(l.studentName || '').trim().toLowerCase()
-            )
-          ) || { name: l.studentName || 'Peserta' };
-
-          const isPulang = String(l.lastType || '').toUpperCase() === 'PULANG';
-          const activityLabel = isPulang ? 'PRESENSI PULANG' : 'PRESENSI MASUK';
-          const activityTime = l.lastTime || l.timeIn || '-';
-          const activityClass = isPulang
-            ? 'bg-blue-100 text-blue-600'
-            : 'bg-emerald-100 text-emerald-600';
-
+        feedContainer.innerHTML = todayLogs.slice(0, 6).map(l => {
+          const s = studentData.find(st => st.id === l.studentId) || { name: 'Siswa' };
           return `
             <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
               <div class="flex items-center space-x-3">
-                <div class="w-8 h-8 rounded-lg ${activityClass} flex items-center justify-center font-bold">
-                  <i class="fa-solid ${isPulang ? 'fa-right-from-bracket' : 'fa-user-check'}"></i>
+                <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                  <i class="fa-solid fa-user-check"></i>
                 </div>
                 <div>
                   <span class="font-bold text-slate-800 block">${s.name}</span>
-                  <span class="text-[10px] text-slate-500 block">${activityLabel} • ${activityTime} WIB</span>
-                  <span class="text-[10px] text-slate-400">${l.mode || 'Server'}</span>
+                  <span class="text-[10px] text-slate-400">${l.timeIn} WIB • ${l.mode}</span>
                 </div>
               </div>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isPulang ? 'bg-blue-100 text-blue-700' : (l.status === 'Hadir' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}">${isPulang ? 'Pulang' : l.status}</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${l.status === 'Hadir' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${l.status}</span>
             </div>
           `;
         }).join('');
@@ -1985,240 +2021,40 @@
       showToast('Aturan Jam Masuk & Pulang Sekolah disimpan!', 'success');
     }
 
-    // ============================================================
-    // GOOGLE SHEETS - WRITE/REFRESH MULTI KOMPUTER
-    // Google Sheets = database utama. localStorage bukan sumber data.
-    // ============================================================
-    function postToGAS(payload, successMessage) {
-      const url = saveGASUrl();
-      if (!url) {
-        showToast('URL Google Apps Script belum diatur.', 'error');
-        return Promise.reject(new Error('GAS URL kosong'));
-      }
-
-      // text/plain + no-cors dipakai agar browser lintas domain dapat mengirim
-      // request ke Apps Script tanpa preflight CORS. Apps Script memproses body JSON.
-      return fetch(url, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
-        keepalive: true
-      }).then(() => {
-        if (successMessage) showToast(successMessage, 'success');
-        return true;
-      }).catch(err => {
-        console.error('GAS write error:', err);
-        showToast('Gagal mengirim data ke Google Sheet.', 'error');
-        throw err;
-      });
-    }
-
     function syncToGoogleSheets(student, status, timeStr, type) {
-      const payload = {
-        action: 'attendance',
-        nis: student.nis,
-        nama: student.name,
-        kelas: student.class,
-        waktu: timeStr,
-        tanggal: getLocalDateString(),
-        status: status,
-        tipe: type
-      };
-      postToGAS(payload).then(() => {
-        // Beri Apps Script waktu menulis, lalu ambil data server terbaru.
-        // Retry kedua membantu jika penulisan Sheet sedikit terlambat.
-        setTimeout(() => {
-          loadAttendanceFromGoogleSheets(true);
-          loadStudentsFromGoogleSheets(true);
-        }, 800);
-
-        setTimeout(() => {
-          loadAttendanceFromGoogleSheets(true);
-        }, 2200);
-      }).catch(() => {});
+      // Legacy compatibility: attendance sekarang diproses atomik melalui scanAttendance.
+      return true;
     }
 
     function syncStudentToGoogleSheets(student) {
-      const payload = {
-        action: 'saveStudent',
-        id: student.id,
-        nis: student.nis,
-        nama: student.name,
-        kelas: student.class,
-        jenis: student.role === 'Guru' ? 'Guru' : 'Siswa',
-        rfid: student.rfid,
-        foto: student.photo
-      };
-      return postToGAS(payload, 'Data siswa dikirim ke Google Sheet.').then(() => {
-        // Refresh dari server agar semua browser mengikuti database pusat.
-        setTimeout(loadStudentsFromGoogleSheets, 700);
-      });
+      const url = saveGASUrl();
+      if (!url) return;
+      fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'saveStudent',
+          id: student.id,
+          nis: student.nis,
+          nama: student.name,
+          kelas: student.class,
+          jenis: student.role === 'Guru' ? 'Guru' : 'Siswa',
+          rfid: student.rfid,
+          foto: student.photo
+        })
+      }).catch(e => console.error(e));
     }
 
     function deleteStudentFromGoogleSheets(student) {
-      const payload = { action: 'deleteStudent', nis: student.nis };
-      return postToGAS(payload, 'Data siswa dihapus dari Google Sheet.').then(() => {
-        setTimeout(loadStudentsFromGoogleSheets, 700);
-      });
-    }
-
-    function loadAttendanceFromGoogleSheets(silent = true, done = null) {
-      const requestSeq = ++attendanceSyncRequestSeq;
-      const url = document.getElementById('gasScriptUrl')?.value.trim();
-      if (!url) {
-        if (typeof done === 'function') done(false);
-        return;
-      }
-
-      const callbackName = 'spensaAttendance_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-      const script = document.createElement('script');
-      let finished = false;
-      const timeout = setTimeout(() => {
-        cleanup();
-        if (typeof done === 'function') done(false);
-      }, 12000);
-
-      function cleanup() {
-        clearTimeout(timeout);
-        delete window[callbackName];
-        if (script.parentNode) script.parentNode.removeChild(script);
-      }
-
-      function finish(ok) {
-        if (finished) return;
-        finished = true;
-        cleanup();
-        if (typeof done === 'function') done(ok);
-      }
-
-      window[callbackName] = function(response) {
-        if (requestSeq !== attendanceSyncRequestSeq) {
-          finish(false);
-          return;
-        }
-
-        if (!response || response.status !== 'success' || !Array.isArray(response.data)) {
-          finish(false);
-          return;
-        }
-
-        const grouped = {};
-
-        response.data.forEach((r, index) => {
-          const nis = String(r.nis || '').trim();
-          const name = String(r.name || '').trim();
-          const date = String(r.date || '').trim();
-
-          // Jangan membuang absensi hanya karena NIS kosong.
-          // Gunakan NIS, atau nama peserta sebagai identitas cadangan.
-          if (!date || (!nis && !name)) return;
-
-          const identity = nis
-            ? 'nis:' + nis
-            : 'name:' + name.toLowerCase();
-
-          const key = identity + '|' + date;
-
-          if (!grouped[key]) {
-            grouped[key] = {
-              id: 'server_' + key,
-              studentId: nis || '',
-              studentName: name,
-              date: date,
-              timeIn: '-',
-              timeOut: '-',
-              status: r.status || 'Hadir',
-              lateMinutes: Number(r.lateMinutes || 0),
-              mode: r.mode || 'Server',
-              lastType: '',
-              lastTime: '-',
-              lastTimestamp: '',
-              _lastOrder: -1
-            };
-          }
-
-          // Code.gs mengirim field "type"; kompatibel juga jika backend mengirim "tipe".
-          const tipe = String(r.tipe || r.type || '').toUpperCase();
-          const waktu = String(r.time || '').trim();
-          const timestamp = String(r.timestamp || '').trim();
-
-          if (tipe === 'PULANG') {
-            grouped[key].timeOut = waktu || grouped[key].timeOut;
-          } else if (tipe === 'MASUK' || !tipe) {
-            // Hanya isi jam masuk jika belum ada; event berikutnya tetap menjadi
-            // aktivitas terbaru.
-            if (grouped[key].timeIn === '-') {
-              grouped[key].timeIn = waktu || grouped[key].timeIn;
-            }
-          }
-
-          if (r.status) grouped[key].status = r.status;
-          if (r.mode) grouped[key].mode = r.mode;
-
-          // Simpan event terakhir untuk Live Feed.
-          // Urutan response berasal dari urutan data Sheet.
-          grouped[key].lastType = tipe || grouped[key].lastType || 'MASUK';
-          grouped[key].lastTime = waktu || grouped[key].lastTime;
-          grouped[key].lastTimestamp = timestamp || grouped[key].lastTimestamp;
-          grouped[key]._lastOrder = index;
-
-          // Jika server mengirim identitas yang cocok dengan peserta,
-          // gunakan ID lokal agar tabel dan live feed dapat menemukan siswa.
-          if (!grouped[key].studentId && name) {
-            const matched = studentData.find(s =>
-              String(s.name || '').trim().toLowerCase() === name.toLowerCase()
-            );
-            if (matched) grouped[key].studentId = matched.id;
-          }
-        });
-
-        attendanceLogs = Object.values(grouped).sort((a, b) => {
-          const aKey = String(a.date) + '|' + String(a.lastTimestamp || '') + '|' + String(a.lastTime || '') + '|' + String(a._lastOrder || 0);
-          const bKey = String(b.date) + '|' + String(b.lastTimestamp || '') + '|' + String(b.lastTime || '') + '|' + String(b._lastOrder || 0);
-          return bKey.localeCompare(aKey);
-        });
-
-        renderDashboard();
-        renderAttendanceLogTable();
-
-        if (!silent) {
-          showToast(`Berhasil memuat ${attendanceLogs.length} rekap absensi dari Google Sheet.`, 'success');
-        }
-
-        finish(true);
-      };
-
-      const separator = url.includes('?') ? '&' : '?';
-      script.src = url + separator + 'action=getAttendance&callback=' + encodeURIComponent(callbackName) + '&_ts=' + Date.now();
-      script.onerror = function() {
-        finish(false);
-      };
-      document.head.appendChild(script);
-    }
-
-    // Polling ringan: komputer lain akan mendapatkan perubahan tanpa reload manual.
-    let spensaSyncTimer = null;
-    let attendanceSyncRequestSeq = 0;
-    function startServerSync() {
-      if (spensaSyncTimer) clearInterval(spensaSyncTimer);
-
-      const refreshServerData = () => {
-        const url = document.getElementById('gasScriptUrl')?.value.trim();
-        if (url && document.visibilityState === 'visible') {
-          loadStudentsFromGoogleSheets(true);
-          loadAttendanceFromGoogleSheets(true);
-        }
-      };
-
-      spensaSyncTimer = setInterval(refreshServerData, 5000);
-
-      // Saat browser kembali aktif/fokus, segera ambil kondisi server terbaru.
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          setTimeout(refreshServerData, 150);
-        }
-      });
+      const url = saveGASUrl();
+      if (!url) return;
+      fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deleteStudent', nis: student.nis })
+      }).catch(e => console.error(e));
     }
 
     function testGASConnection() {
@@ -2234,312 +2070,152 @@
 
     function openGASScriptModal() {
       const scriptCode = `/**
- * PORTAL ABSENSI SPENSA - BACKEND GOOGLE APPS SCRIPT
- * Frontend: GitHub Pages / Cloudflare Pages (HTTPS agar webcam berfungsi)
- * Database: Google Sheets
+ * PORTAL ABSENSI SPENSA - GOOGLE APPS SCRIPT
+ * Sheet Peserta: A=NIS, B=Nama, C=Kelas, D=Jenis, E=RFID, F=Foto
+ * Sheet Absensi: UUID, Tanggal, Kelas, NIS, Nama, Status, Waktu, Timestamp
  */
+
 const APP = Object.freeze({
-  VERSION: '3.0.0',
+  VERSION: '2.0.0',
   TIMEZONE: 'Asia/Jakarta',
-  SHEETS: {
-    SETTINGS: 'Pengaturan',
-    PARTICIPANTS: 'Peserta',
-    ATTENDANCE: 'Absensi',
-    USERS: 'Users',
-    LOG: 'LogAktivitas'
-  }
+  SHEETS: { SETTINGS: 'Pengaturan', PARTICIPANTS: 'Peserta', ATTENDANCE: 'Absensi' }
 });
 
-function setupDatabase() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.setSpreadsheetTimeZone(APP.TIMEZONE);
-  ensureSheet_(ss, APP.SHEETS.SETTINGS, ['Kunci','Nilai','Keterangan']);
-  ensureSheet_(ss, APP.SHEETS.PARTICIPANTS, ['NIS','Nama','Kelas','Jenis','RFID','Foto']);
-  ensureSheet_(ss, APP.SHEETS.ATTENDANCE, ['ID','Tanggal','Kelas','NIS','Nama','Status','Waktu','Timestamp','Tipe','Metode']);
-  ensureSheet_(ss, APP.SHEETS.USERS, ['Username','Nama','Role','Aktif']);
-  ensureSheet_(ss, APP.SHEETS.LOG, ['Timestamp','Aksi','NIS/User','Detail']);
-
-  const st = ss.getSheetByName(APP.SHEETS.SETTINGS);
-  if (st.getLastRow() === 1) {
-    st.getRange(2,1,3,3).setValues([
-      ['jamMasuk','07:00','Jam masuk sekolah'],
-      ['jamToleransi','07:15','Batas terlambat'],
-      ['jamPulang','15:00','Jam pulang sekolah']
-    ]);
-  }
-  return 'Database siap.';
-}
-
 function doGet(e) {
-  const p = (e && e.parameter) || {};
-  const action = p.action || 'ping';
-  try {
-    if (action === 'ping') return output_({status:'success', message:'Portal Absensi Spensa API Ready', version:APP.VERSION}, p.callback);
-    if (action === 'getParticipants') return output_({status:'success', data:getParticipants_()}, p.callback);
-    if (action === 'getSettings') return output_({status:'success', data:getSettings_()}, p.callback);
-    if (action === 'getAttendance') return output_({status:'success', data:getAttendance_(p)}, p.callback);
-    if (action === 'scanAttendance') return output_(scanAttendance_(p), p.callback);
-    return output_({status:'error', message:'Action tidak dikenal'}, p.callback);
-  } catch (err) {
-    return output_({status:'error', message:String(err)}, p.callback);
+  const action = e && e.parameter ? e.parameter.action : '';
+  if (action === 'getParticipants') {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(APP.SHEETS.PARTICIPANTS);
+    const rows = sheet ? sheet.getDataRange().getValues() : [];
+    const data = [];
+
+    // Baris pertama adalah header: NIS | Nama | Kelas | Jenis | RFID | Foto
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.every(v => v === '' || v === null)) continue;
+      data.push({
+        id: String(r[0] || r[4] || i),
+        nis: String(r[0] || '').trim(),
+        name: String(r[1] || '').trim(),
+        class: String(r[2] || '').trim(),
+        role: String(r[3] || '').toLowerCase().includes('guru') || String(r[3] || '').toLowerCase().includes('staf') ? 'Guru' : 'Siswa',
+        rfid: String(r[4] || '').trim(),
+        photo: String(r[5] || '').trim()
+      });
+    }
+
+    const result = { status: 'success', data: data };
+    const callback = e.parameter.callback;
+    if (callback) {
+      return ContentService.createTextOutput(callback + '(' + JSON.stringify(result) + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
   }
+
+  return ContentService.createTextOutput('Portal Absensi Spensa GAS Engine Ready');
 }
 
 function doPost(e) {
   try {
-    const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    const action = data.action || 'attendance';
+    const data = JSON.parse(e.postData.contents || '{}');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    if (action === 'saveStudent') {
-      const sh = ensureSheet_(ss, APP.SHEETS.PARTICIPANTS, ['NIS','Nama','Kelas','Jenis','RFID','Foto']);
-      upsertStudent_(sh, data);
-      log_('SAVE_STUDENT', data.nis || '', data.nama || '');
-      return json_({status:'success', action});
+    if (data.action === 'saveStudent') {
+      const sheet = ss.getSheetByName(APP.SHEETS.PARTICIPANTS) || ss.insertSheet(APP.SHEETS.PARTICIPANTS);
+      if (sheet.getLastRow() === 0) {
+        sheet.appendRow(['NIS', 'Nama', 'Kelas', 'Jenis', 'RFID', 'Foto']);
+      }
+      const values = sheet.getDataRange().getValues();
+      let foundRow = -1;
+      for (let i = 1; i < values.length; i++) {
+        if (String(values[i][0]) === String(data.nis)) {
+          foundRow = i + 1;
+          break;
+        }
+      }
+      const row = [data.nis || '', data.nama || '', data.kelas || '', data.jenis || 'Siswa', data.rfid || '', data.foto || ''];
+      if (foundRow > 0) sheet.getRange(foundRow, 1, 1, 6).setValues([row]);
+      else sheet.appendRow(row);
+      return jsonResponse({ status: 'success', action: 'saveStudent' });
     }
 
-    if (action === 'deleteStudent') {
-      const sh = ss.getSheetByName(APP.SHEETS.PARTICIPANTS);
-      if (sh) deleteByNis_(sh, data.nis);
-      log_('DELETE_STUDENT', data.nis || '', '');
-      return json_({status:'success', action});
+    if (data.action === 'deleteStudent') {
+      const sheet = ss.getSheetByName(APP.SHEETS.PARTICIPANTS);
+      if (sheet) {
+        const values = sheet.getDataRange().getValues();
+        for (let i = values.length - 1; i >= 1; i--) {
+          if (String(values[i][0]) === String(data.nis)) sheet.deleteRow(i + 1);
+        }
+      }
+      return jsonResponse({ status: 'success', action: 'deleteStudent' });
     }
 
-    if (action === 'saveSettings') {
-      saveSettings_(data.settings || {});
-      log_('SAVE_SETTINGS', '', JSON.stringify(data.settings || {}));
-      return json_({status:'success', action});
+    // Default: simpan absensi
+    const sheet = ss.getSheetByName(APP.SHEETS.ATTENDANCE) || ss.insertSheet(APP.SHEETS.ATTENDANCE);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['ID', 'Tanggal', 'Kelas', 'NIS', 'Nama', 'Status', 'Waktu', 'Timestamp', 'Tipe']);
     }
-
-    if (action === 'attendance') {
-      const result = saveAttendance_(data);
-      return json_({status:'success', action, result});
-    }
-
-    return json_({status:'error', message:'Action tidak dikenal'});
+    sheet.appendRow([
+      Utilities.getUuid(), data.tanggal || new Date(), data.kelas || '', data.nis || '',
+      data.nama || '', data.status || 'Hadir', data.waktu || '', new Date(), data.tipe || ''
+    ]);
+    return jsonResponse({ status: 'success', action: 'attendance' });
   } catch (err) {
-    return json_({status:'error', message:String(err)});
+    return jsonResponse({ status: 'error', message: err.toString() });
   }
 }
 
-function getParticipants_() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(APP.SHEETS.PARTICIPANTS);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2,1,sh.getLastRow()-1,6).getValues().filter(r => r.some(v => v !== '')).map((r,i) => ({
-    id:String(r[0] || r[4] || i+1), nis:String(r[0]||''), name:String(r[1]||''), class:String(r[2]||''),
-    role:/guru|staf/i.test(String(r[3]||''))?'Guru':'Siswa', rfid:String(r[4]||''), photo:String(r[5]||'')
-  }));
-}
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}`
 
-function getSettings_() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(APP.SHEETS.SETTINGS);
-  const out = {jamMasuk:'07:00', jamToleransi:'07:15', jamPulang:'15:00'};
-  if (!sh || sh.getLastRow()<2) return out;
-  sh.getRange(2,1,sh.getLastRow()-1,2).getValues().forEach(r => { if (r[0]) out[String(r[0])] = String(r[1]); });
-  return out;
-}
-
-function getAttendance_(p) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(APP.SHEETS.ATTENDANCE);
-  if (!sh || sh.getLastRow()<2) return [];
-  const tz=APP.TIMEZONE;
-  return sh.getRange(2,1,sh.getLastRow()-1,10).getValues().map(r => ({
-    id:String(r[0]||''), date:r[1] instanceof Date?Utilities.formatDate(r[1],tz,'yyyy-MM-dd'):String(r[1]||''),
-    class:String(r[2]||''), nis:String(r[3]||''), name:String(r[4]||''), status:String(r[5]||''),
-    time:String(r[6]||''), type:String(r[8]||''), tipe:String(r[8]||''), mode:String(r[9]||'')
-  })).filter(x => (!p.date || x.date === p.date) && (!p.nis || x.nis === p.nis));
-}
-
-function scanAttendance_(p) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const participants = getParticipants_();
-
-    const value = String(p.value || '').trim();
-    if (!value) {
-      return {status:'error', message:'Kode RFID/NIS kosong.'};
+      document.getElementById('gasCodeTextArea').value = scriptCode;
+      document.getElementById('gasCodeModal').classList.remove('hidden');
     }
 
-    const valueLower = value.toLowerCase();
-    const student = participants.find(s =>
-      String(s.rfid || '').trim() === value ||
-      String(s.nis || '').trim() === value ||
-      String(s.id || '').trim() === value ||
-      String(s.name || '').trim().toLowerCase() === valueLower
-    );
-
-    if (!student) {
-      return {status:'error', message:'ID / Kode RFID tidak terdaftar.'};
+    function closeGASCodeModal() {
+      document.getElementById('gasCodeModal').classList.add('hidden');
     }
 
-    const now = new Date();
-    const date = Utilities.formatDate(now, APP.TIMEZONE, 'yyyy-MM-dd');
-    const time = Utilities.formatDate(now, APP.TIMEZONE, 'HH:mm:ss');
-
-    const sh = ensureSheet_(
-      ss,
-      APP.SHEETS.ATTENDANCE,
-      ['ID','Tanggal','Kelas','NIS','Nama','Status','Waktu','Timestamp','Tipe','Metode']
-    );
-
-    // Identitas server: utamakan NIS; jika NIS kosong gunakan nama.
-    const nis = String(student.nis || '').trim();
-    const name = String(student.name || '').trim();
-    const rows = sh.getLastRow() >= 2
-      ? sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(10, sh.getLastColumn())).getValues()
-      : [];
-
-    let latestType = '';
-    let latestStatus = 'Hadir';
-    let latestTime = '';
-
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const r = rows[i];
-      const rowDate = r[1] instanceof Date
-        ? Utilities.formatDate(r[1], APP.TIMEZONE, 'yyyy-MM-dd')
-        : String(r[1] || '').trim();
-
-      if (rowDate !== date) continue;
-
-      const rowNis = String(r[3] || '').trim();
-      const rowName = String(r[4] || '').trim();
-
-      const samePerson = nis
-        ? rowNis === nis
-        : rowName.toLowerCase() === name.toLowerCase();
-
-      if (!samePerson) continue;
-
-      latestType = String(r[8] || '').trim().toUpperCase();
-      latestStatus = String(r[5] || 'Hadir').trim() || 'Hadir';
-      latestTime = String(r[6] || '').trim();
-      break;
+    function copyGASCode() {
+      const textArea = document.getElementById('gasCodeTextArea');
+      textArea.select();
+      document.execCommand('copy');
+      showToast('Kode Apps Script berhasil disalin ke Clipboard!', 'success');
     }
 
-    if (latestType === 'PULANG') {
-      return {
-        status:'error',
-        code:'ALREADY_COMPLETE',
-        message:'Presensi hari ini sudah memiliki Jam Masuk dan Jam Pulang.',
-        student,
-        attendance:{date, type:'PULANG', time:latestTime, status:latestStatus}
-      };
+    function saveLocalStorage() {
+      localStorage.setItem('spensa_students', JSON.stringify(studentData));
+      localStorage.setItem('spensa_logs', JSON.stringify(attendanceLogs));
+      localStorage.setItem('spensa_time', JSON.stringify(timeSettings));
     }
 
-    let type = 'MASUK';
-    let status = 'Hadir';
-    let lateMinutes = 0;
+    function loadLocalStorage() {
+      const savedStudents = localStorage.getItem('spensa_students');
+      const savedLogs = localStorage.getItem('spensa_logs');
+      const savedTime = localStorage.getItem('spensa_time');
 
-    if (latestType === 'MASUK') {
-      type = 'PULANG';
-      status = latestStatus || 'Hadir';
-    } else {
-      const settings = getSettings_();
-      const tolerance = String(settings.jamToleransi || '07:15').split(':').map(Number);
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
-      const toleranceMinutes = (tolerance[0] || 0) * 60 + (tolerance[1] || 0);
-
-      if (currentMinutes > toleranceMinutes) {
-        status = 'Terlambat';
-        lateMinutes = currentMinutes - toleranceMinutes;
+      if (savedStudents) studentData = JSON.parse(savedStudents);
+      if (savedLogs) attendanceLogs = JSON.parse(savedLogs);
+      if (savedTime) {
+        timeSettings = JSON.parse(savedTime);
+        document.getElementById('setJamMasuk').value = timeSettings.jamMasuk;
+        document.getElementById('setJamToleransi').value = timeSettings.jamToleransi;
+        document.getElementById('setJamPulang').value = timeSettings.jamPulang;
       }
     }
 
-    const id = Utilities.getUuid();
-    const row = [
-      id,
-      date,
-      student.class || '',
-      student.nis || '',
-      student.name || '',
-      status,
-      time,
-      now,
-      type,
-      p.mode || 'RFID'
-    ];
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      
+      const bgColor = type === 'success' ? 'bg-emerald-600' : (type === 'error' ? 'bg-rose-600' : 'bg-slate-800');
+      const icon = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-circle-xmark' : 'fa-info-circle');
 
-    sh.appendRow(row);
-    log_('ATTENDANCE', student.nis || student.name || '', \`\${type} \${time}\`);
-
-    return {
-      status:'success',
-      action:'scanAttendance',
-      student,
-      attendance:{
-        id,
-        date,
-        time,
-        type,
-        tipe:type,
-        status,
-        lateMinutes,
-        mode:p.mode || 'RFID'
-      }
-    };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function saveAttendance_(data) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sh = ensureSheet_(ss, APP.SHEETS.ATTENDANCE, ['ID','Tanggal','Kelas','NIS','Nama','Status','Waktu','Timestamp','Tipe','Metode']);
-  const now = new Date();
-  const date = data.tanggal || Utilities.formatDate(now, APP.TIMEZONE, 'yyyy-MM-dd');
-  const time = data.waktu || Utilities.formatDate(now, APP.TIMEZONE, 'HH:mm:ss');
-  const row = [Utilities.getUuid(), date, data.kelas||'', data.nis||'', data.nama||'', data.status||'Hadir', time, now, data.tipe||'MASUK', data.metode||data.mode||''];
-  sh.appendRow(row);
-  log_('ATTENDANCE', data.nis||'', \`\${data.tipe||'MASUK'} \${time}\`);
-  return {id:row[0], date, time};
-}
-
-function saveSettings_(settings) {
-  const ss=SpreadsheetApp.getActiveSpreadsheet();
-  const sh=ensureSheet_(ss,APP.SHEETS.SETTINGS,['Kunci','Nilai','Keterangan']);
-  const vals=sh.getDataRange().getValues();
-  Object.keys(settings).forEach(k => {
-    let row=-1;
-    for(let i=1;i<vals.length;i++) if(String(vals[i][0])===k){row=i+1;break;}
-    if(row>0) sh.getRange(row,2).setValue(settings[k]); else sh.appendRow([k,settings[k],'']);
-  });
-}
-
-function upsertStudent_(sh, data) {
-  const values=sh.getDataRange().getValues();
-  let row=-1;
-  for(let i=1;i<values.length;i++) if(String(values[i][0])===String(data.nis)){row=i+1;break;}
-  const v=[data.nis||'',data.nama||'',data.kelas||'',data.jenis||'Siswa',data.rfid||'',data.foto||''];
-  if(row>0) sh.getRange(row,1,1,6).setValues([v]); else sh.appendRow(v);
-}
-
-function deleteByNis_(sh, nis) {
-  const values=sh.getDataRange().getValues();
-  for(let i=values.length-1;i>=1;i--) if(String(values[i][0])===String(nis)) sh.deleteRow(i+1);
-}
-
-function ensureSheet_(ss,name,headers){
-  let sh=ss.getSheetByName(name); if(!sh) sh=ss.insertSheet(name);
-  if(sh.getLastRow()===0) sh.appendRow(headers);
-  sh.setFrozenRows(1); return sh;
-}
-
-function log_(action, who, detail){
-  const ss=SpreadsheetApp.getActiveSpreadsheet();
-  const sh=ensureSheet_(ss,APP.SHEETS.LOG,['Timestamp','Aksi','NIS/User','Detail']);
-  sh.appendRow([new Date(),action,who,detail]);
-}
-
-function output_(obj, callback){
-  const text=JSON.stringify(obj);
-  if(callback) return ContentService.createTextOutput(\`\${callback}(\${text})\`).setMimeType(ContentService.MimeType.JAVASCRIPT);
-  return ContentService.createTextOutput(text).setMimeType(ContentService.MimeType.JSON);
-}
-function json_(obj){ return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
-`;
+      toast.className = `${bgColor} text-white px-4 py-3 rounded-xl shadow-xl flex items-center space-x-3 text-xs font-bold pointer-events-auto transition-all transform translate-y-2 opacity-0`;
       toast.innerHTML = `<i class="fa-solid ${icon} text-sm"></i> <span>${message}</span>`;
 
       container.appendChild(toast);
