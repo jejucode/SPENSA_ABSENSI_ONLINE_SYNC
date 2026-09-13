@@ -1132,13 +1132,19 @@
 
     function loadGASUrl() {
       const input = document.getElementById('gasScriptUrl');
-      const savedUrl = localStorage.getItem('spensa_gas_url');
+      const savedUrl = (localStorage.getItem('spensa_gas_url') || '').trim();
 
-      // Jika browser belum pernah menyimpan URL, gunakan URL GAS bawaan.
-      input.value = savedUrl || DEFAULT_GAS_URL;
+      // PENTING: gunakan deployment GAS aktif sebagai sumber utama.
+      // Browser lama mungkin masih menyimpan URL deployment sebelumnya di localStorage.
+      // URL lama itulah yang dapat membuat absensi terlihat berjalan tetapi tidak masuk
+      // ke Spreadsheet yang sekarang.
+      const activeUrl = DEFAULT_GAS_URL;
+      input.value = activeUrl;
+      localStorage.setItem('spensa_gas_url', activeUrl);
 
-      // Pastikan browser menyimpan endpoint yang sama.
-      localStorage.setItem('spensa_gas_url', input.value);
+      if (savedUrl && savedUrl !== activeUrl) {
+        console.info('GAS URL lama diganti dengan deployment aktif.');
+      }
     }
 
     function loadStudentsFromGoogleSheets(silent = false) {
@@ -2184,7 +2190,7 @@
       };
 
       const separator = url.includes('?') ? '&' : '?';
-      script.src = url + separator + 'action=getAttendance&callback=' + encodeURIComponent(callbackName);
+      script.src = url + separator + 'action=getAttendance&callback=' + encodeURIComponent(callbackName) + '&_ts=' + Date.now();
       script.onerror = function() {
         finish(false);
       };
